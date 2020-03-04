@@ -1,0 +1,89 @@
+{
+  "variables": {
+    "aws_access_key": "",
+    "aws_secret_key": "",
+    "kubernetes_version": "",
+    "cni_plugins_version": "",
+    "containerd_version": ""
+  },
+  "builders": [
+    {
+      "type": "amazon-ebs",
+      "access_key": "{{ user `aws_access_key` }}",
+      "secret_key": "{{ user `aws_secret_key` }}",
+      "region": "us-east-1",
+      "source_ami": "ami-046842448f9e74e7d",
+      "instance_type": "t2.micro",
+      "ssh_username": "ubuntu",
+      "ami_name": "oneinfra containerd {{timestamp}}"
+    },
+    {
+      "type": "qemu",
+      "iso_url": "https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img",
+      "iso_checksum_url": "https://cloud-images.ubuntu.com/bionic/current/MD5SUMS",
+      "iso_checksum_type": "md5",
+      "disk_image": true,
+      "shutdown_command": "sudo shutdown -h now",
+      "disk_size": "20G",
+      "format": "qcow2",
+      "accelerator": "kvm",
+      "http_directory": "cloud-init",
+      "headless": true,
+      "ssh_username": "ubuntu",
+      "ssh_password": "ubuntu",
+      "vm_name": "oneinfra",
+      "net_device": "virtio-net",
+      "disk_interface": "virtio",
+      "boot_wait": "10s",
+      "qemuargs": [
+        ["-smbios", "type=1,serial=ds=nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/"]
+      ]
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "file",
+      "source": "files/etc/systemd/containerd.service",
+      "destination": "/tmp/containerd.service"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mv /tmp/containerd.service /etc/systemd/system"
+      ]
+    },
+    {
+      "type": "file",
+      "source": "files/etc/containerd/config.toml",
+      "destination": "/tmp/config.toml"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mkdir /etc/containerd",
+        "sudo mv /tmp/config.toml /etc/containerd/config.toml"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo apt-get update -qq",
+        "sudo apt-get install --no-install-recommends -qq -y runc ca-certificates curl iptables wget",
+        "wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{ user `kubernetes_version` }}/crictl-v{{ user `kubernetes_version` }}-linux-amd64.tar.gz -O cri-tools.tar.gz",
+        "sudo tar -C /usr/local/bin -xf cri-tools.tar.gz",
+        "rm cri-tools.tar.gz",
+        "sudo mkdir -p /opt/cni/bin",
+        "wget https://github.com/containernetworking/plugins/releases/download/v{{ user `cni_plugins_version` }}/cni-plugins-linux-amd64-v{{ user `cni_plugins_version` }}.tgz -O cni.tgz",
+        "sudo tar -C /opt/cni/bin -xf cni.tgz",
+        "rm cni.tgz",
+        "wget https://github.com/containerd/containerd/releases/download/v{{ user `containerd_version` }}/containerd-{{ user `containerd_version` }}.linux-amd64.tar.gz -O containerd.tar.gz",
+        "sudo tar -C /usr/local -xf containerd.tar.gz",
+        "rm containerd.tar.gz",
+        "sudo rm /usr/local/bin/containerd-stress /usr/local/bin/ctr",
+        "sudo systemctl enable containerd",
+        "sudo mkdir -p /etc/cni/net.d",
+        "sudo apt-get clean -y"
+      ]
+    }
+  ]
+}
